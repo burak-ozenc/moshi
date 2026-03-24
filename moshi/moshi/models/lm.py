@@ -529,6 +529,7 @@ class _LMGenState(State):
     offset_cpu: int = 0
     condition_sum: torch.Tensor | None = None
     condition_cross: torch.Tensor | None = None
+    text_steering_delta: torch.Tensor | None = None   # Phase 5b stub — always None in 5a
     cfg_is_masked_until: torch.Tensor | None = None
     exit_stack: ExitStack = field(default_factory=ExitStack)
     reset_callback: tp.Callable[[torch.Tensor], None] | None = None
@@ -667,7 +668,8 @@ class LMGen(StreamingModule[_LMGenState]):
 
     @torch.no_grad()
     def _step(self, input_tokens: torch.Tensor,
-              depformer_replace_tokens: torch.Tensor | None = None
+              depformer_replace_tokens: torch.Tensor | None = None,
+              forced_text_token: torch.Tensor | None = None,
               ) -> tuple[torch.Tensor, torch.Tensor] | None:
         state = self._streaming_state
         if state is None:
@@ -743,6 +745,8 @@ class LMGen(StreamingModule[_LMGenState]):
         assert text_token.shape[2] == 1
         assert text_token.shape[1] == 1, "Only one text stream supported."
         text_token = text_token[:, 0, 0]  # shape is [B]
+        if forced_text_token is not None:          # Phase 5a injection — SPEC-5A-v1
+            text_token = forced_text_token
         if self.on_text_hook is not None:
             self.on_text_hook(text_token)
         if state.graphed_depth is None:
@@ -784,8 +788,10 @@ class LMGen(StreamingModule[_LMGenState]):
 
     @torch.no_grad()
     def step(self, input_tokens: torch.Tensor,
-             depformer_replace_tokens: torch.Tensor | None = None) -> torch.Tensor | None:
-        out = self._step(input_tokens, depformer_replace_tokens)
+             depformer_replace_tokens: torch.Tensor | None = None,
+             forced_text_token: torch.Tensor | None = None,
+             ) -> torch.Tensor | None:
+        out = self._step(input_tokens, depformer_replace_tokens, forced_text_token)
         if out is None:
             return None
         return out[0]
