@@ -667,10 +667,13 @@ class LMGen(StreamingModule[_LMGenState]):
         return state
 
     @torch.no_grad()
-    def _step(self, input_tokens: torch.Tensor,
-              depformer_replace_tokens: torch.Tensor | None = None,
-              forced_text_token: torch.Tensor | None = None,
-              ) -> tuple[torch.Tensor, torch.Tensor] | None:
+    def _step(
+            self,
+            input_tokens,
+            depformer_replace_tokens=None,
+            forced_text_token=None,
+            text_logit_modifier=None,   # §5 addition
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
         state = self._streaming_state
         if state is None:
             raise RuntimeError(
@@ -726,6 +729,8 @@ class LMGen(StreamingModule[_LMGenState]):
                 input_[B:, :1] = torch.where(~is_init[:, :1], zero, input_[B:, :1])
 
         transformer_out, text_logits = state.graphed_main(input_, state.condition_sum, state.condition_cross)
+        if text_logit_modifier is not None:
+            text_logits = text_logit_modifier(text_logits)
         if self.cfg_coef != 1.:
             logits, logits_null = text_logits.chunk(2)
             if self.cfg_is_no_text:
@@ -787,11 +792,10 @@ class LMGen(StreamingModule[_LMGenState]):
         return out, transformer_out
 
     @torch.no_grad()
-    def step(self, input_tokens: torch.Tensor,
-             depformer_replace_tokens: torch.Tensor | None = None,
-             forced_text_token: torch.Tensor | None = None,
-             ) -> torch.Tensor | None:
-        out = self._step(input_tokens, depformer_replace_tokens, forced_text_token)
+    def step(self, input_tokens, depformer_replace_tokens=None,
+             forced_text_token=None, text_logit_modifier=None):
+        out = self._step(input_tokens, depformer_replace_tokens,
+                         forced_text_token, text_logit_modifier)
         if out is None:
             return None
         return out[0]
